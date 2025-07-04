@@ -1,70 +1,120 @@
-# Getting Started with Create React App
+# WhatsMe<span style="color:#0ea5e9">Up</span> - Modern Chat Application
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+WhatsMe**Up** is a modern, open-source, self-hosted chat application with a sleek UI powered by TanStack, Framer Motion, React Icons, and Django.
 
-## Available Scripts
+## Features
 
-In the project directory, you can run:
+- **Beautiful UI/UX**: Modern interface with smooth animations and transitions
+- **Real-time Messaging**: Send and receive messages in real-time
+- **Dark/Light Mode**: Toggle between dark and light themes
+- **Authentication**: Sign up and login with username, email, or phone number
+- **User Profiles**: Customize your profile with pictures and personal information
+- **Responsive Design**: Works on desktop, tablet, and mobile devices
+- **File Sharing**: Share images and files in conversations
+- **Group Chats**: Create and manage group conversations
+- **Message Status**: See when messages are delivered and read
 
-### `npm start`
+## Tech Stack
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+### Frontend
+- **React**: UI library for building the user interface
+- **TanStack Query**: Data fetching, caching, and state management
+- **Framer Motion**: Animations and transitions
+- **React Router**: Navigation and routing
+- **Tailwind CSS**: Utility-first CSS framework
+- **React Icons**: Icon library
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### Backend
+- **Django**: Python web framework
+- **Django REST Framework**: RESTful API framework
+- **Simple JWT**: JWT authentication
+- **SQLite**: Database (can be replaced with PostgreSQL, MySQL, etc.)
 
-### `npm test`
+## Getting Started
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+### Prerequisites
+- Node.js (v16+)
+- Python (v3.8+)
+- npm or yarn
 
-### `npm run build`
+### Installation
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/whatsmeup.git
+   cd whatsmeup
+   ```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+2. **Set up the backend**
+   ```bash
+   # Create a virtual environment
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   
+   # Install dependencies
+   cd backend
+   pip install -r requirements.txt
+   
+   # Run migrations
+   python manage.py migrate
+   
+   # Create a superuser
+   python manage.py createsuperuser
+   
+   # Start the development server
+   python manage.py runserver
+   ```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+3. **Set up the frontend**
+   ```bash
+   # Install dependencies
+   npm install
+   
+   # Start the development server
+   npm start
+   ```
 
-### `npm run eject`
+4. **Access the application**
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8000/api
+   - Admin panel: http://localhost:8000/admin
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## Project Structure
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+```
+whatsmeup/
+├── backend/               # Django backend
+│   ├── accounts/          # User authentication and profiles
+│   ├── chat/              # Chat functionality
+│   └── backend/           # Project settings
+├── src/                   # React frontend
+│   ├── components/        # Reusable UI components
+│   ├── contexts/          # React contexts
+│   ├── pages/             # Page components
+│   ├── services/          # API services
+│   └── App.js             # Main application component
+└── public/                # Static assets
+```
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## Contributing
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Learn More
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## License
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-### Code Splitting
+## Acknowledgments
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- [React](https://reactjs.org/)
+- [Django](https://www.djangoproject.com/)
+- [TanStack Query](https://tanstack.com/query)
+- [Framer Motion](https://www.framer.com/motion/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [React Icons](https://react-icons.github.io/react-icons/)

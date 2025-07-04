@@ -24,7 +24,29 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
-    <title>React App</title>
+    <title>WhatsMeUp</title>
+    <!-- Initialize dark mode before page renders to prevent flash -->
+    <script>
+      // Check if theme is stored in localStorage
+      const savedTheme = localStorage.getItem('theme');
+      
+      // If theme is stored, use it
+      if (savedTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else if (savedTheme === 'light') {
+        document.documentElement.classList.remove('dark');
+      } 
+      // Otherwise, check system preference
+      else {
+        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          document.documentElement.classList.add('dark');
+          localStorage.setItem('theme', 'dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+          localStorage.setItem('theme', 'light');
+        }
+      }
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
