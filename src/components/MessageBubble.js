@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
-import { FiDownload, FiCornerUpRight, FiMoreVertical, FiSmile, FiCheck, FiCheckCircle } from 'react-icons/fi';
+import { 
+  FiDownload, FiCornerUpRight, FiMoreVertical, FiSmile, 
+  FiCheck, FiCheckCircle, FiFile, FiFileText, FiMusic, FiPlay, FiPause 
+} from 'react-icons/fi';
 import PropTypes from 'prop-types';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -18,6 +21,8 @@ const MessageBubble = ({
   const { user } = useAuth();
   const { darkMode } = useTheme();
   const [showOptions, setShowOptions] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef(null);
   
   // Format timestamp
   const formattedTime = message.timestamp ? 
@@ -27,11 +32,64 @@ const MessageBubble = ({
   // Handle file type and display
   const hasAttachment = message.attachment_url || message.attachment;
   const attachmentUrl = message.attachment_url || message.attachment;
-  const isImage = hasAttachment && 
-    (attachmentUrl.endsWith('.jpg') || 
-     attachmentUrl.endsWith('.jpeg') || 
-     attachmentUrl.endsWith('.png') || 
-     attachmentUrl.endsWith('.gif'));
+  
+  // Determine file type
+  const getFileType = () => {
+    if (!hasAttachment) return null;
+    
+    const url = attachmentUrl.toLowerCase();
+    
+    if (url.match(/\.(jpeg|jpg|gif|png|webp|svg)$/)) return 'image';
+    if (url.match(/\.(mp3|wav|ogg|m4a)$/)) return 'audio';
+    if (url.match(/\.(mp4|webm|mov|avi|mkv)$/)) return 'video';
+    if (url.match(/\.(pdf)$/)) return 'pdf';
+    if (url.match(/\.(doc|docx)$/)) return 'word';
+    if (url.match(/\.(xls|xlsx)$/)) return 'excel';
+    if (url.match(/\.(ppt|pptx)$/)) return 'powerpoint';
+    
+    return 'file';
+  };
+  
+  const fileType = getFileType();
+  
+  // Get file icon based on type
+  const getFileIcon = () => {
+    switch (fileType) {
+      case 'pdf':
+        return <FiFileText className="text-red-500" size={24} />;
+      case 'word':
+        return <FiFileText className="text-blue-500" size={24} />;
+      case 'excel':
+        return <FiFileText className="text-green-500" size={24} />;
+      case 'powerpoint':
+        return <FiFileText className="text-orange-500" size={24} />;
+      case 'audio':
+        return <FiMusic className="text-purple-500" size={24} />;
+      case 'video':
+        return <FiFileText className="text-pink-500" size={24} />;
+      default:
+        return <FiFile className="text-gray-500" size={24} />;
+    }
+  };
+  
+  // Get file name from URL
+  const getFileName = () => {
+    if (!attachmentUrl) return '';
+    return attachmentUrl.split('/').pop();
+  };
+  
+  // Handle audio playback
+  const toggleAudio = () => {
+    if (!audioRef.current) return;
+    
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    
+    setIsPlaying(!isPlaying);
+  };
   
   // Animation variants
   const bubbleVariants = {
@@ -113,10 +171,10 @@ const MessageBubble = ({
         <motion.div
           className={`relative rounded-2xl px-4 py-2 ${
             isOwn
-              ? `${darkMode ? 'bg-blue-600' : 'bg-blue-500'} text-white`
+              ? `${darkMode ? 'bg-primary-600' : 'bg-primary-500'} text-white ${isOwn ? 'rounded-tr-none' : ''}`
               : darkMode
-                ? 'bg-gray-700 text-white'
-                : 'bg-gray-100 text-gray-800'
+                ? 'bg-gray-700 text-white rounded-tl-none'
+                : 'bg-gray-100 text-gray-800 rounded-tl-none'
           }`}
           variants={bubbleVariants}
           initial="initial"
@@ -126,29 +184,70 @@ const MessageBubble = ({
           onMouseLeave={() => setShowOptions(false)}
         >
           {/* Message content */}
-          <div className="mb-1 whitespace-pre-wrap">{message.content}</div>
+          {message.content && (
+            <div className="mb-1 whitespace-pre-wrap">{message.content}</div>
+          )}
           
           {/* Attachment display */}
           {hasAttachment && (
             <div className="mt-2">
-              {isImage ? (
+              {fileType === 'image' ? (
                 <img 
                   src={attachmentUrl} 
                   alt="Attachment" 
-                  className="rounded-lg max-h-60 max-w-full object-contain"
+                  className="rounded-lg max-h-60 max-w-full object-contain cursor-pointer"
+                  onClick={() => window.open(attachmentUrl, '_blank')}
                 />
+              ) : fileType === 'audio' ? (
+                <div className={`flex flex-col p-2 rounded-lg ${
+                  isOwn
+                    ? darkMode ? 'bg-primary-700' : 'bg-primary-600'
+                    : darkMode ? 'bg-gray-800' : 'bg-gray-200'
+                }`}>
+                  <div className="flex items-center">
+                    <button
+                      onClick={toggleAudio}
+                      className={`p-2 rounded-full ${
+                        isOwn
+                          ? 'bg-primary-700 hover:bg-primary-800'
+                          : darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-300 hover:bg-gray-400'
+                      }`}
+                    >
+                      {isPlaying ? <FiPause size={16} /> : <FiPlay size={16} />}
+                    </button>
+                    
+                    <div className="ml-2 flex-1">
+                      <div className="h-2 bg-gray-300 dark:bg-gray-600 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500" style={{ width: '0%' }}></div>
+                      </div>
+                    </div>
+                    
+                    <a 
+                      href={attachmentUrl} 
+                      download 
+                      className="ml-2 p-1 rounded hover:bg-opacity-20 hover:bg-black"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <FiDownload size={16} />
+                    </a>
+                  </div>
+                  <audio ref={audioRef} src={attachmentUrl} onEnded={() => setIsPlaying(false)} className="hidden" />
+                </div>
               ) : (
                 <div className={`flex items-center p-2 rounded-lg ${
-                  darkMode ? 'bg-gray-800' : 'bg-gray-200'
+                  isOwn
+                    ? darkMode ? 'bg-primary-700' : 'bg-primary-600'
+                    : darkMode ? 'bg-gray-800' : 'bg-gray-200'
                 }`}>
-                  <FiDownload className="mr-2" />
-                  <span className="text-sm truncate flex-1">
-                    {attachmentUrl.split('/').pop()}
+                  {getFileIcon()}
+                  <span className="ml-2 text-sm truncate flex-1">
+                    {getFileName()}
                   </span>
                   <a 
                     href={attachmentUrl} 
                     download 
                     className="ml-2 p-1 rounded hover:bg-opacity-20 hover:bg-black"
+                    onClick={(e) => e.stopPropagation()}
                   >
                     <FiDownload size={16} />
                   </a>
@@ -158,7 +257,7 @@ const MessageBubble = ({
           )}
           
           {/* Message metadata */}
-          <div className={`flex items-center text-xs mt-1 ${
+          <div className={`text-xs mt-1 flex justify-end items-center ${
             isOwn ? 'text-blue-100' : darkMode ? 'text-gray-400' : 'text-gray-500'
           }`}>
             <span>{formattedTime}</span>
@@ -227,6 +326,16 @@ const MessageBubble = ({
           </div>
         )}
       </div>
+      
+      {isOwn && showAvatar && (
+        <div className="ml-2 flex-shrink-0">
+          <UserAvatar 
+            user={message.sender} 
+            size="sm" 
+            showStatus={false} 
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -234,7 +343,7 @@ const MessageBubble = ({
 MessageBubble.propTypes = {
   message: PropTypes.shape({
     id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-    content: PropTypes.string.isRequired,
+    content: PropTypes.string,
     timestamp: PropTypes.string,
     sender: PropTypes.object,
     is_read: PropTypes.bool,

@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   FiSend, FiPaperclip, FiMic, FiSmile, FiChevronLeft, 
-  FiMoreVertical, FiSearch, FiX, FiPlus, FiCornerUpRight
+  FiMoreVertical, FiSearch, FiX, FiPlus, FiCornerUpRight,
+  FiStopCircle, FiImage, FiFile, FiVideo
 } from 'react-icons/fi';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -13,58 +14,63 @@ import MessageBubble from '../components/MessageBubble';
 import ConversationItem from '../components/ConversationItem';
 import UserAvatar from '../components/UserAvatar';
 import LoadingScreen from '../components/LoadingScreen';
+import { chatApi } from '../services/api';
 
 // API service functions
 const fetchConversations = async () => {
-  // In a real app, this would be an API call
-  const response = await fetch('/api/conversations');
-  if (!response.ok) throw new Error('Failed to fetch conversations');
-  return response.json();
+  try {
+    const response = await chatApi.getConversations();
+    return response.data;
+  } catch (error) {
+    throw new Error('Failed to fetch conversations');
+  }
 };
 
 const fetchMessages = async (conversationId) => {
   if (!conversationId) return [];
-  // In a real app, this would be an API call
-  const response = await fetch(`/api/conversations/${conversationId}/messages`);
-  if (!response.ok) throw new Error('Failed to fetch messages');
-  return response.json();
+  try {
+    const response = await chatApi.getMessages(conversationId);
+    return response.data;
+  } catch (error) {
+    throw new Error('Failed to fetch messages');
+  }
 };
 
 const sendMessage = async ({ conversationId, content, attachment, replyTo }) => {
-  // In a real app, this would be an API call
-  const formData = new FormData();
-  formData.append('conversation_id', conversationId);
-  formData.append('content', content);
-  
-  if (replyTo) {
-    formData.append('reply_to', replyTo);
+  try {
+    let response;
+    
+    if (attachment) {
+      response = await chatApi.sendMessageWithAttachment(
+        conversationId,
+        content,
+        attachment,
+        replyTo
+      );
+    } else {
+      response = await chatApi.sendMessage(
+        conversationId,
+        content,
+        replyTo
+      );
+    }
+    
+    return response.data;
+  } catch (error) {
+    throw new Error('Failed to send message');
   }
-  
-  if (attachment) {
-    formData.append('attachment', attachment);
-  }
-  
-  const response = await fetch('/api/messages', {
-    method: 'POST',
-    body: formData
-  });
-  
-  if (!response.ok) throw new Error('Failed to send message');
-  return response.json();
 };
 
 const startConversation = async (userId) => {
-  // In a real app, this would be an API call
-  const response = await fetch('/api/conversations/start_conversation', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ user_id: userId })
-  });
-  
-  if (!response.ok) throw new Error('Failed to start conversation');
-  return response.json();
+  try {
+    const response = await chatApi.createConversation({
+      participants: [userId],
+      is_group: false
+    });
+    return response.data;
+  } catch (error) {
+    throw new Error('Failed to start conversation');
+  }
 };
 
 const Chat = () => {
@@ -83,11 +89,18 @@ const Chat = () => {
   const [replyingTo, setReplyingTo] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
   const [typingUsers, setTypingUsers] = useState({});
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   
   // Refs
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const messageInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
   
   // Queries
   const { 
@@ -122,6 +135,9 @@ const Chat = () => {
       
       // Update the conversations list to show the latest message
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      
+      // Reset upload progress
+      setUploadProgress(0);
     },
     onError: (error) => {
       showToast({
@@ -199,54 +215,43 @@ const Chat = () => {
         // Update conversations list
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
       } else if (data.type === 'typing') {
-        // Update typing status
         setTypingUsers(prev => ({
           ...prev,
           [data.user_id]: {
-            isTyping: data.is_typing,
-            timestamp: new Date().getTime()
+            username: data.username,
+            isTyping: true
           }
         }));
+        
+        // Clear typing indicator after 3 seconds
+        setTimeout(() => {
+          setTypingUsers(prev => ({
+            ...prev,
+            [data.user_id]: {
+              ...prev[data.user_id],
+              isTyping: false
+            }
+          }));
+        }, 3000);
       }
-    };
-    
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
     };
     
     ws.onclose = () => {
       console.log('WebSocket disconnected');
     };
     
-    // Clean up on unmount
     return () => {
       ws.close();
     };
   }, [conversationId, queryClient]);
   
-  // Clear typing status after delay
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = new Date().getTime();
-      setTypingUsers(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(userId => {
-          if (now - updated[userId].timestamp > 3000 && updated[userId].isTyping) {
-            updated[userId].isTyping = false;
-          }
-        });
-        return updated;
-      });
-    }, 1000);
-    
-    return () => clearInterval(interval);
-  }, []);
+  // Get current conversation
+  const currentConversation = conversations.find(
+    c => c.id.toString() === conversationId
+  );
   
-  // Find current conversation
-  const currentConversation = conversations.find(c => c.id.toString() === conversationId);
-  
-  // Filter conversations by search query
-  const filteredConversations = searchQuery
+  // Filter conversations based on search query
+  const filteredConversations = searchQuery.trim()
     ? conversations.filter(c => {
         const participants = c.participants || [];
         return participants.some(p => 
@@ -285,12 +290,40 @@ const Chat = () => {
   
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
-      setAttachment(e.target.files[0]);
+      const file = e.target.files[0];
+      setAttachment(file);
+      
+      // Show a preview or file info
+      showToast({
+        message: `File selected: ${file.name}`,
+        type: 'info'
+      });
     }
   };
   
   const handleAttachmentClick = () => {
-    fileInputRef.current?.click();
+    setShowAttachmentMenu(!showAttachmentMenu);
+  };
+  
+  const handleFileTypeSelect = (type) => {
+    // Set accept attribute based on file type
+    if (fileInputRef.current) {
+      switch (type) {
+        case 'image':
+          fileInputRef.current.accept = 'image/*';
+          break;
+        case 'document':
+          fileInputRef.current.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt';
+          break;
+        case 'video':
+          fileInputRef.current.accept = 'video/*';
+          break;
+        default:
+          fileInputRef.current.accept = '*/*';
+      }
+      fileInputRef.current.click();
+    }
+    setShowAttachmentMenu(false);
   };
   
   const handleCancelAttachment = () => {
@@ -319,6 +352,71 @@ const Chat = () => {
   
   const handleStartConversation = (userId) => {
     startConversationMutation.mutate(userId);
+  };
+  
+  // Voice recording handlers
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      
+      mediaRecorderRef.current.addEventListener('dataavailable', (event) => {
+        audioChunksRef.current.push(event.data);
+      });
+      
+      mediaRecorderRef.current.addEventListener('stop', () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/mp3' });
+        
+        // Send voice note
+        sendMessageMutation.mutate({
+          conversationId,
+          content: 'Voice message',
+          attachment: audioBlob,
+          replyTo: replyingTo?.id
+        });
+        
+        setReplyingTo(null);
+        
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+      });
+      
+      // Start recording
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+      
+      // Start timer
+      let seconds = 0;
+      recordingTimerRef.current = setInterval(() => {
+        seconds++;
+        setRecordingTime(seconds);
+      }, 1000);
+      
+    } catch (error) {
+      showToast({
+        message: `Microphone access denied: ${error.message}`,
+        type: 'error'
+      });
+    }
+  };
+  
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      
+      // Clear timer
+      clearInterval(recordingTimerRef.current);
+      setRecordingTime(0);
+    }
+  };
+  
+  // Format recording time
+  const formatRecordingTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
   
   // Render functions
@@ -550,50 +648,110 @@ const Chat = () => {
             </div>
           )}
           
-          <form onSubmit={handleSendMessage} className="flex items-center">
-            <button
-              type="button"
-              onClick={handleAttachmentClick}
-              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 mr-2"
-            >
-              <FiPaperclip />
-            </button>
-            
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              className="hidden"
-            />
-            
-            <input
-              type="text"
-              placeholder="Type a message..."
-              className="flex-1 p-3 rounded-lg bg-gray-100 dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={messageInput}
-              onChange={handleInputChange}
-              ref={messageInputRef}
-            />
-            
-            <button
-              type="button"
-              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 mx-2"
-            >
-              <FiSmile />
-            </button>
-            
-            <button
-              type="submit"
-              disabled={!messageInput.trim() && !attachment}
-              className={`p-2 rounded-full ${
-                !messageInput.trim() && !attachment
-                  ? 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400'
-                  : 'bg-blue-500 hover:bg-blue-600 text-white'
-              }`}
-            >
-              <FiSend />
-            </button>
-          </form>
+          {/* Upload progress bar */}
+          {uploadProgress > 0 && uploadProgress < 100 && (
+            <div className="mb-2">
+              <div className="h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-blue-500" 
+                  style={{ width: `${uploadProgress}%` }}
+                ></div>
+              </div>
+            </div>
+          )}
+          
+          {/* Voice recording UI */}
+          {isRecording ? (
+            <div className="flex items-center p-3 bg-red-50 dark:bg-red-900/20 rounded-lg mb-2">
+              <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-3"></div>
+              <span className="text-red-500 flex-1">Recording... {formatRecordingTime(recordingTime)}</span>
+              <button
+                onClick={stopRecording}
+                className="p-2 bg-red-500 text-white rounded-full"
+              >
+                <FiStopCircle />
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleSendMessage} className="flex items-center">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={handleAttachmentClick}
+                  className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 mr-2"
+                >
+                  <FiPaperclip />
+                </button>
+                
+                {/* Attachment menu */}
+                {showAttachmentMenu && (
+                  <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 w-48">
+                    <button
+                      type="button"
+                      onClick={() => handleFileTypeSelect('image')}
+                      className="flex items-center w-full p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                    >
+                      <FiImage className="mr-2" /> Photos & Videos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleFileTypeSelect('document')}
+                      className="flex items-center w-full p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                    >
+                      <FiFile className="mr-2" /> Documents
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleFileTypeSelect('video')}
+                      className="flex items-center w-full p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                    >
+                      <FiVideo className="mr-2" /> Camera
+                    </button>
+                  </div>
+                )}
+                
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+              </div>
+              
+              <input
+                type="text"
+                placeholder="Type a message..."
+                className="flex-1 p-3 rounded-lg bg-gray-100 dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={messageInput}
+                onChange={handleInputChange}
+                ref={messageInputRef}
+              />
+              
+              <button
+                type="button"
+                className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 mx-2"
+              >
+                <FiSmile />
+              </button>
+              
+              {messageInput.trim() || attachment ? (
+                <button
+                  type="submit"
+                  className="p-2 rounded-full bg-blue-500 hover:bg-blue-600 text-white"
+                >
+                  <FiSend />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startRecording}
+                  className="p-2 rounded-full bg-blue-500 hover:bg-blue-600 text-white"
+                >
+                  <FiMic />
+                </button>
+              )}
+            </form>
+          )}
         </div>
       )}
     </motion.div>

@@ -1,18 +1,20 @@
 from django.shortcuts import render
-from rest_framework import generics, permissions, status, viewsets
+from rest_framework import generics, permissions, status, viewsets, parsers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db.models import Q, Max, Count
 from rest_framework.decorators import action
+import uuid
+import os
 
-from .models import Conversation, Message, Attachment, Notification
+from .models import Conversation, Message, Attachment, Notification, FileUpload
 from accounts.models import User
 from .serializers import (
     ConversationSerializer, ConversationCreateSerializer,
     MessageSerializer, MessageCreateSerializer, AttachmentSerializer,
-    ConversationListSerializer, NotificationSerializer
+    ConversationListSerializer, NotificationSerializer, FileUploadSerializer
 )
 
 
@@ -66,6 +68,7 @@ class MessageCreateView(generics.CreateAPIView):
     """View for creating a new message"""
     serializer_class = MessageCreateSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
     
     def perform_create(self, serializer):
         conversation_id = self.kwargs.get('conversation_id')
@@ -86,6 +89,7 @@ class MessageCreateView(generics.CreateAPIView):
 class AttachmentUploadView(APIView):
     """View for uploading attachments to a message"""
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
     
     def post(self, request, message_id):
         message = get_object_or_404(
@@ -112,6 +116,44 @@ class AttachmentUploadView(APIView):
             AttachmentSerializer(attachment).data, 
             status=status.HTTP_201_CREATED
         )
+
+
+class FileUploadView(APIView):
+    """View for handling file uploads with progress tracking"""
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+    
+    def post(self, request):
+        serializer = FileUploadSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        
+        if serializer.is_valid():
+            upload = serializer.save()
+            return Response(
+                FileUploadSerializer(upload).data,
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class FileUploadProgressView(APIView):
+    """View for checking file upload progress"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, upload_id):
+        upload = get_object_or_404(
+            FileUpload,
+            upload_id=upload_id,
+            user=request.user
+        )
+        
+        return Response({
+            'upload_id': upload.upload_id,
+            'progress': upload.progress,
+            'completed': upload.completed
+        })
 
 
 class UnreadMessagesCountView(APIView):
@@ -182,8 +224,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         ).exclude(sender=request.user)
         
         for message in unread_messages:
-            message.is_read = True
-            message.save()
+            message.mark_as_read(request.user)
         
         # Get messages with pagination
         page = self.paginate_queryset(
@@ -216,6 +257,7 @@ class MessageViewSet(viewsets.ModelViewSet):
     """API endpoint for messages"""
     serializer_class = MessageSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
     
     def get_queryset(self):
         """Return messages for the current user's conversations"""
@@ -223,15 +265,22 @@ class MessageViewSet(viewsets.ModelViewSet):
             conversation__participants=self.request.user
         )
     
+    def get_serializer_class(self):
+        """Return appropriate serializer class"""
+        if self.action == 'create':
+            return MessageCreateSerializer
+        return MessageSerializer
+    
     def create(self, request, *args, **kwargs):
         """Create a new message"""
-        conversation_id = request.data.get('conversation_id')
-        content = request.data.get('content')
+        conversation_id = request.data.get('conversation')
+        content = request.data.get('content', '')
         reply_to_id = request.data.get('reply_to')
+        attachment = request.FILES.get('attachment')
         
-        if not conversation_id or not content:
+        if not conversation_id:
             return Response(
-                {'error': 'Conversation ID and content are required'}, 
+                {'error': 'Conversation ID is required'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
             
@@ -252,10 +301,7 @@ class MessageViewSet(viewsets.ModelViewSet):
             try:
                 reply_to = Message.objects.get(id=reply_to_id)
             except Message.DoesNotExist:
-                return Response(
-                    {'error': 'Reply message not found'}, 
-                    status=status.HTTP_404_NOT_FOUND
-                )
+                pass
         
         # Create message
         message = Message.objects.create(
@@ -265,24 +311,39 @@ class MessageViewSet(viewsets.ModelViewSet):
             reply_to=reply_to
         )
         
-        # Handle file attachment if provided
-        if 'attachment' in request.FILES:
-            attachment_file = request.FILES['attachment']
-            message.attachment = attachment_file
+        # Handle attachment if provided
+        if attachment:
+            message.attachment = attachment
             message.save()
         
         # Update conversation timestamp
         conversation.updated_at = timezone.now()
         conversation.save()
         
-        serializer = self.get_serializer(message)
+        # Create notifications for other participants
+        for participant in conversation.participants.exclude(id=request.user.id):
+            Notification.objects.create(
+                recipient=participant,
+                sender=request.user,
+                notification_type='message',
+                message=f"New message from {request.user.username}",
+                related_message=message,
+                related_conversation=conversation,
+                data={
+                    'conversation_id': conversation.id,
+                    'message_id': message.id,
+                    'has_attachment': bool(attachment)
+                }
+            )
+        
+        serializer = MessageSerializer(message)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
     @action(detail=True, methods=['post'])
     def mark_read(self, request, pk=None):
         """Mark a message as read"""
         message = self.get_object()
-        message.mark_as_read()
+        message.mark_as_read(request.user)
         return Response({'status': 'message marked as read'})
 
 
@@ -290,9 +351,10 @@ class AttachmentViewSet(viewsets.ModelViewSet):
     """API endpoint for attachments"""
     serializer_class = AttachmentSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
     
     def get_queryset(self):
-        """Return attachments for the current user's conversations"""
+        """Return attachments for the current user's messages"""
         return Attachment.objects.filter(
             message__conversation__participants=self.request.user
         )
@@ -305,36 +367,37 @@ class NotificationViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Return notifications for the current user"""
-        return Notification.objects.filter(recipient=self.request.user).order_by('-created_at')
+        return Notification.objects.filter(recipient=self.request.user)
     
     @action(detail=False, methods=['get'])
-    def unread(self):
-        """Return unread notifications for the current user"""
-        unread_notifications = Notification.objects.filter(
-            recipient=self.request.user,
+    def unread(self, request):
+        """Get unread notifications"""
+        notifications = Notification.objects.filter(
+            recipient=request.user,
             is_read=False
-        ).order_by('-created_at')
-        serializer = self.get_serializer(unread_notifications, many=True)
+        )
+        serializer = self.get_serializer(notifications, many=True)
         return Response(serializer.data)
     
     @action(detail=False, methods=['post'])
     def mark_all_read(self, request):
         """Mark all notifications as read"""
-        notifications = Notification.objects.filter(
+        Notification.objects.filter(
             recipient=request.user,
             is_read=False
-        )
-        count = notifications.count()
-        notifications.update(is_read=True)
-        return Response({'status': 'success', 'marked_read': count})
+        ).update(is_read=True)
+        
+        return Response({
+            'status': 'all notifications marked as read'
+        })
     
     @action(detail=True, methods=['post'])
     def mark_read(self, request, pk=None):
         """Mark a notification as read"""
         notification = self.get_object()
         notification.mark_as_read()
-        return Response({'status': 'success'})
+        return Response({'status': 'notification marked as read'})
     
     def perform_create(self, serializer):
-        """Set the recipient to the current user when creating a notification"""
+        """Create notification with recipient"""
         serializer.save(recipient=self.request.user)

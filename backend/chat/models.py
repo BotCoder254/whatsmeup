@@ -1,6 +1,10 @@
 from django.db import models
 from django.conf import settings
 from django.db.models import Q
+import os
+from PIL import Image
+from io import BytesIO
+from django.core.files.base import ContentFile
 
 class Conversation(models.Model):
     """A conversation between two or more users"""
@@ -37,8 +41,24 @@ class Conversation(models.Model):
         ordering = ['-updated_at']
 
 
+def message_attachment_path(instance, filename):
+    """Define upload path for message attachments"""
+    # Get the file extension
+    ext = filename.split('.')[-1]
+    # Create path: chat_attachments/conversation_id/timestamp_filename.ext
+    return f'chat_attachments/{instance.conversation.id}/{instance.sender.id}_{int(instance.timestamp.timestamp())}_{filename}'
+
+
 class Message(models.Model):
     """A message in a conversation"""
+    ATTACHMENT_TYPES = (
+        ('image', 'Image'),
+        ('audio', 'Audio'),
+        ('video', 'Video'),
+        ('document', 'Document'),
+        ('other', 'Other'),
+    )
+    
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='sent_messages')
     content = models.TextField()
@@ -46,10 +66,68 @@ class Message(models.Model):
     is_read = models.BooleanField(default=False)
     read_by = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='read_messages', blank=True)
     reply_to = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='replies')
-    attachment = models.FileField(upload_to='chat_attachments/', null=True, blank=True)
+    attachment = models.FileField(upload_to=message_attachment_path, null=True, blank=True)
+    attachment_type = models.CharField(max_length=20, choices=ATTACHMENT_TYPES, null=True, blank=True)
+    attachment_thumbnail = models.ImageField(upload_to='chat_thumbnails/', null=True, blank=True)
     
     def __str__(self):
         return f"Message from {self.sender.username} in {self.conversation}"
+    
+    def save(self, *args, **kwargs):
+        # Detect attachment type if attachment is present
+        if self.attachment and not self.attachment_type:
+            self.set_attachment_type()
+            
+        # Generate thumbnail for image attachments
+        if self.attachment and self.attachment_type == 'image' and not self.attachment_thumbnail:
+            self.generate_thumbnail()
+            
+        super().save(*args, **kwargs)
+    
+    def set_attachment_type(self):
+        """Detect attachment type based on file extension"""
+        if not self.attachment:
+            return
+            
+        filename = self.attachment.name.lower()
+        
+        # Check file extension
+        if filename.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg')):
+            self.attachment_type = 'image'
+        elif filename.endswith(('.mp3', '.wav', '.ogg', '.m4a')):
+            self.attachment_type = 'audio'
+        elif filename.endswith(('.mp4', '.webm', '.mov', '.avi', '.mkv')):
+            self.attachment_type = 'video'
+        elif filename.endswith(('.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt')):
+            self.attachment_type = 'document'
+        else:
+            self.attachment_type = 'other'
+    
+    def generate_thumbnail(self):
+        """Generate thumbnail for image attachments"""
+        if not self.attachment or not self.attachment_type == 'image':
+            return
+            
+        try:
+            # Open the image
+            img = Image.open(self.attachment)
+            
+            # Resize to thumbnail
+            img.thumbnail((300, 300))
+            
+            # Save thumbnail to in-memory file
+            thumb_io = BytesIO()
+            img_format = 'JPEG' if self.attachment.name.lower().endswith(('.jpg', '.jpeg')) else 'PNG'
+            img.save(thumb_io, format=img_format)
+            
+            # Create a new file name
+            thumb_filename = f"thumb_{os.path.basename(self.attachment.name)}"
+            
+            # Save to attachment_thumbnail field
+            self.attachment_thumbnail.save(thumb_filename, ContentFile(thumb_io.getvalue()), save=False)
+        except Exception as e:
+            # Log the error but continue
+            print(f"Error generating thumbnail: {e}")
     
     def mark_as_read(self, user):
         """Mark message as read by a specific user"""
@@ -111,3 +189,16 @@ class Notification(models.Model):
     
     class Meta:
         ordering = ['-created_at']
+
+
+class FileUpload(models.Model):
+    """Track file upload progress"""
+    file = models.FileField(upload_to='uploads/')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    upload_id = models.CharField(max_length=100, unique=True)
+    progress = models.IntegerField(default=0)
+    completed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"Upload {self.upload_id} by {self.user.username}"

@@ -23,13 +23,53 @@ export const chatApi = {
   getMessages: (conversationId) => api.get(`/chat/conversations/${conversationId}/messages/`),
   
   // Send a message
-  sendMessage: (conversationId, content) => api.post(`/chat/conversations/${conversationId}/messages/create/`, { content }),
+  sendMessage: (conversationId, content, replyTo = null) => api.post(`/chat/conversations/${conversationId}/messages/create/`, { 
+    content,
+    reply_to: replyTo 
+  }),
+  
+  // Send a message with attachment
+  sendMessageWithAttachment: (conversationId, content, file, replyTo = null) => {
+    const formData = new FormData();
+    formData.append('content', content);
+    formData.append('attachment', file);
+    
+    if (replyTo) {
+      formData.append('reply_to', replyTo);
+    }
+    
+    return api.post(`/chat/conversations/${conversationId}/messages/create/`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
   
   // Upload attachment
   uploadAttachment: (messageId, file) => {
     const formData = new FormData();
     formData.append('file', file);
     return api.post(`/chat/messages/${messageId}/attachments/`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+  
+  // Get file upload progress
+  getFileUploadProgress: (uploadId) => api.get(`/chat/uploads/${uploadId}/progress/`),
+  
+  // Send voice note
+  sendVoiceNote: (conversationId, audioBlob, replyTo = null) => {
+    const formData = new FormData();
+    formData.append('content', 'Voice note');
+    formData.append('attachment', audioBlob, 'voice_note.mp3');
+    
+    if (replyTo) {
+      formData.append('reply_to', replyTo);
+    }
+    
+    return api.post(`/chat/conversations/${conversationId}/messages/create/`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },

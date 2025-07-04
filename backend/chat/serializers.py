@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Conversation, Message, Attachment, Notification
+from .models import Conversation, Message, Attachment, Notification, FileUpload
 from accounts.serializers import UserSerializer
 
 User = get_user_model()
@@ -18,14 +18,19 @@ class MessageSerializer(serializers.ModelSerializer):
     sender = UserSerializer(read_only=True)
     reply_to_message = serializers.SerializerMethodField()
     attachment_url = serializers.SerializerMethodField()
+    attachment_thumbnail_url = serializers.SerializerMethodField()
+    attachment_type = serializers.CharField(read_only=True)
+    attachment_name = serializers.SerializerMethodField()
     
     class Meta:
         model = Message
         fields = [
             'id', 'conversation', 'sender', 'content', 'timestamp', 
-            'is_read', 'reply_to', 'reply_to_message', 'attachment', 'attachment_url'
+            'is_read', 'reply_to', 'reply_to_message', 'attachment', 
+            'attachment_url', 'attachment_type', 'attachment_thumbnail_url',
+            'attachment_name'
         ]
-        read_only_fields = ['sender', 'timestamp', 'is_read']
+        read_only_fields = ['sender', 'timestamp', 'is_read', 'attachment_type']
     
     def get_reply_to_message(self, obj):
         """Return simplified data for the replied message"""
@@ -43,10 +48,24 @@ class MessageSerializer(serializers.ModelSerializer):
         if obj.attachment:
             return obj.attachment.url
         return None
+    
+    def get_attachment_thumbnail_url(self, obj):
+        """Return URL for the attachment thumbnail if it exists"""
+        if obj.attachment_thumbnail:
+            return obj.attachment_thumbnail.url
+        return None
+    
+    def get_attachment_name(self, obj):
+        """Return the filename of the attachment"""
+        if obj.attachment:
+            return obj.attachment.name.split('/')[-1]
+        return None
 
 
 class MessageCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating Message objects"""
+    attachment = serializers.FileField(required=False)
+    
     class Meta:
         model = Message
         fields = ['conversation', 'content', 'reply_to', 'attachment']
@@ -78,7 +97,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
         """Get the last message in the conversation"""
         last_message = obj.messages.order_by('-timestamp').first()
         if last_message:
-            return {
+            message_data = {
                 'id': last_message.id,
                 'content': last_message.content[:50],  # Truncate long content
                 'sender_id': last_message.sender.id,
@@ -86,6 +105,15 @@ class ConversationListSerializer(serializers.ModelSerializer):
                 'timestamp': last_message.timestamp,
                 'is_read': last_message.is_read
             }
+            
+            # Add attachment info if present
+            if last_message.attachment:
+                message_data.update({
+                    'has_attachment': True,
+                    'attachment_type': last_message.attachment_type
+                })
+            
+            return message_data
         return None
     
     def get_unread_count(self, obj):
@@ -156,4 +184,27 @@ class NotificationSerializer(serializers.ModelSerializer):
             'username': recipient.username
         }
         
-        return representation 
+        return representation
+
+
+class FileUploadSerializer(serializers.ModelSerializer):
+    """Serializer for the FileUpload model"""
+    file = serializers.FileField()
+    
+    class Meta:
+        model = FileUpload
+        fields = ['id', 'file', 'upload_id', 'progress', 'completed', 'created_at']
+        read_only_fields = ['id', 'upload_id', 'progress', 'completed', 'created_at']
+    
+    def create(self, validated_data):
+        """Create a new file upload with the current user"""
+        user = self.context['request'].user
+        upload_id = f"upload_{user.id}_{validated_data['file'].name}_{int(validated_data['created_at'].timestamp())}"
+        
+        file_upload = FileUpload.objects.create(
+            user=user,
+            upload_id=upload_id,
+            **validated_data
+        )
+        
+        return file_upload 

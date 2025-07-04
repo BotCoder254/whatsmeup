@@ -10,4 +10,8 @@ router.register(r'notifications', views.NotificationViewSet, basename='notificat
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('messages/<int:message_id>/attachments/', views.AttachmentUploadView.as_view(), name='message-attachment'),
+    path('uploads/', views.FileUploadView.as_view(), name='file-upload'),
+    path('uploads/<str:upload_id>/progress/', views.FileUploadProgressView.as_view(), name='upload-progress'),
+    path('messages/unread/', views.UnreadMessagesCountView.as_view(), name='unread-messages-count'),
 ] 
