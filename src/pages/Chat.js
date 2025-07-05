@@ -14,6 +14,7 @@ import MessageBubble from '../components/MessageBubble';
 import ConversationItem from '../components/ConversationItem';
 import UserAvatar from '../components/UserAvatar';
 import LoadingScreen from '../components/LoadingScreen';
+import MessageSearch from '../components/MessageSearch';
 import { chatApi } from '../services/api';
 
 // API service functions
@@ -93,6 +94,7 @@ const Chat = () => {
   const [recordingTime, setRecordingTime] = useState(0);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [showMessageSearch, setShowMessageSearch] = useState(false);
   
   // Refs
   const messagesEndRef = useRef(null);
@@ -419,6 +421,20 @@ const Chat = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
   
+  // Handle message search selection
+  const handleMessageSelect = (message) => {
+    // Scroll to the selected message
+    const messageElement = document.getElementById(`message-${message.id}`);
+    if (messageElement) {
+      messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Highlight the message temporarily
+      messageElement.classList.add('bg-yellow-100', 'dark:bg-yellow-800');
+      setTimeout(() => {
+        messageElement.classList.remove('bg-yellow-100', 'dark:bg-yellow-800');
+      }, 2000);
+    }
+  };
+  
   // Render functions
   const renderConversationsList = () => (
     <motion.div 
@@ -542,6 +558,13 @@ const Chat = () => {
               </div>
             </div>
             
+            <button 
+              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 mr-2"
+              onClick={() => setShowMessageSearch(true)}
+              title="Search messages"
+            >
+              <FiSearch />
+            </button>
             <button className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700">
               <FiMoreVertical />
             </button>
@@ -785,6 +808,14 @@ const Chat = () => {
       <div className="hidden md:block w-2/3 h-full">
         {renderChatArea()}
       </div>
+      
+      {/* Message Search Component */}
+      <MessageSearch 
+        isOpen={showMessageSearch}
+        onClose={() => setShowMessageSearch(false)}
+        conversationId={conversationId}
+        onMessageSelect={handleMessageSelect}
+      />
     </div>
   );
 };

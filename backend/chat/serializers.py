@@ -21,6 +21,11 @@ class MessageSerializer(serializers.ModelSerializer):
     attachment_thumbnail_url = serializers.SerializerMethodField()
     attachment_type = serializers.CharField(read_only=True)
     attachment_name = serializers.SerializerMethodField()
+    is_forwarded = serializers.BooleanField(read_only=True)
+    forwarded_from_info = serializers.SerializerMethodField()
+    forwarded_by_info = serializers.SerializerMethodField()
+    thread_count = serializers.SerializerMethodField()
+    parent_message_info = serializers.SerializerMethodField()
     
     class Meta:
         model = Message
@@ -28,9 +33,15 @@ class MessageSerializer(serializers.ModelSerializer):
             'id', 'conversation', 'sender', 'content', 'timestamp', 
             'is_read', 'reply_to', 'reply_to_message', 'attachment', 
             'attachment_url', 'attachment_type', 'attachment_thumbnail_url',
-            'attachment_name'
+            'attachment_name', 'parent_message', 'is_forwarded', 
+            'forwarded_from_info', 'forwarded_by_info', 'thread_count',
+            'parent_message_info'
         ]
-        read_only_fields = ['sender', 'timestamp', 'is_read', 'attachment_type']
+        read_only_fields = [
+            'sender', 'timestamp', 'is_read', 'attachment_type', 
+            'is_forwarded', 'forwarded_from_info', 'forwarded_by_info',
+            'thread_count', 'parent_message_info'
+        ]
     
     def get_reply_to_message(self, obj):
         """Return simplified data for the replied message"""
@@ -60,15 +71,59 @@ class MessageSerializer(serializers.ModelSerializer):
         if obj.attachment:
             return obj.attachment.name.split('/')[-1]
         return None
+    
+    def get_forwarded_from_info(self, obj):
+        """Return information about the original message if this is a forwarded message"""
+        if obj.forwarded_from:
+            return {
+                'id': obj.forwarded_from.id,
+                'conversation_id': obj.forwarded_from.conversation.id,
+                'sender_name': obj.forwarded_from.sender.username,
+                'sender_id': obj.forwarded_from.sender.id,
+                'timestamp': obj.forwarded_from.timestamp
+            }
+        return None
+    
+    def get_forwarded_by_info(self, obj):
+        """Return information about who forwarded the message"""
+        if obj.forwarded_by:
+            return {
+                'id': obj.forwarded_by.id,
+                'username': obj.forwarded_by.username
+            }
+        return None
+    
+    def get_thread_count(self, obj):
+        """Return the number of replies in a thread"""
+        if obj.parent_message is None:  # This is a parent message
+            return Message.objects.filter(parent_message=obj).count()
+        return 0
+    
+    def get_parent_message_info(self, obj):
+        """Return information about the parent message if this is a thread reply"""
+        if obj.parent_message:
+            return {
+                'id': obj.parent_message.id,
+                'content': obj.parent_message.content[:100],  # Truncate long content
+                'sender_name': obj.parent_message.sender.username,
+                'sender_id': obj.parent_message.sender.id,
+                'timestamp': obj.parent_message.timestamp
+            }
+        return None
 
 
 class MessageCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating Message objects"""
     attachment = serializers.FileField(required=False)
+    parent_message = serializers.PrimaryKeyRelatedField(
+        queryset=Message.objects.all(),
+        required=False,
+        allow_null=True
+    )
     
     class Meta:
         model = Message
-        fields = ['conversation', 'content', 'reply_to', 'attachment']
+        fields = ['conversation', 'content', 'reply_to', 'attachment', 'parent_message']
     
     def create(self, validated_data):
         """Create a new message with the current user as sender"""
@@ -111,6 +166,19 @@ class ConversationListSerializer(serializers.ModelSerializer):
                 message_data.update({
                     'has_attachment': True,
                     'attachment_type': last_message.attachment_type
+                })
+            
+            # Add forwarded info if applicable
+            if last_message.is_forwarded:
+                message_data.update({
+                    'is_forwarded': True
+                })
+            
+            # Add thread info if applicable
+            if last_message.thread_count > 0:
+                message_data.update({
+                    'has_thread': True,
+                    'thread_count': last_message.thread_count
                 })
             
             return message_data

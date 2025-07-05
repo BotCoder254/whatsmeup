@@ -20,16 +20,43 @@ export const chatApi = {
   createConversation: (data) => api.post('/chat/conversations/create/', data),
   
   // Get messages for a conversation
-  getMessages: (conversationId) => api.get(`/chat/conversations/${conversationId}/messages/`),
+  getMessages: (conversationId, parentMessageId = null) => {
+    let url = `/chat/conversations/${conversationId}/messages/`;
+    if (parentMessageId) {
+      url += `?parent_message_id=${parentMessageId}`;
+    }
+    return api.get(url);
+  },
+  
+  // Get thread messages for a parent message
+  getThreadMessages: (messageId) => api.get(`/chat/messages/${messageId}/thread/`),
+  
+  // Search messages
+  searchMessages: (params) => {
+    const { query, conversationId, senderId, startDate, endDate } = params || {};
+    let url = '/chat/messages/search/?';
+    
+    if (query) url += `q=${encodeURIComponent(query)}&`;
+    if (conversationId) url += `conversation_id=${conversationId}&`;
+    if (senderId) url += `sender_id=${senderId}&`;
+    if (startDate) url += `start_date=${startDate}&`;
+    if (endDate) url += `end_date=${endDate}&`;
+    
+    // Remove trailing '&' if it exists
+    url = url.endsWith('&') ? url.slice(0, -1) : url;
+    
+    return api.get(url);
+  },
   
   // Send a message
-  sendMessage: (conversationId, content, replyTo = null) => api.post(`/chat/conversations/${conversationId}/messages/create/`, { 
+  sendMessage: (conversationId, content, replyTo = null, parentMessageId = null) => api.post(`/chat/conversations/${conversationId}/messages/create/`, { 
     content,
-    reply_to: replyTo 
+    reply_to: replyTo,
+    parent_message: parentMessageId
   }),
   
   // Send a message with attachment
-  sendMessageWithAttachment: (conversationId, content, file, replyTo = null) => {
+  sendMessageWithAttachment: (conversationId, content, file, replyTo = null, parentMessageId = null) => {
     const formData = new FormData();
     formData.append('content', content);
     formData.append('attachment', file);
@@ -38,10 +65,21 @@ export const chatApi = {
       formData.append('reply_to', replyTo);
     }
     
+    if (parentMessageId) {
+      formData.append('parent_message', parentMessageId);
+    }
+    
     return api.post(`/chat/conversations/${conversationId}/messages/create/`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+    });
+  },
+  
+  // Forward a message to another conversation
+  forwardMessage: (messageId, targetConversationId) => {
+    return api.post(`/chat/messages/${messageId}/forward/`, {
+      conversation_id: targetConversationId
     });
   },
   
@@ -57,16 +95,20 @@ export const chatApi = {
   },
   
   // Get file upload progress
-  getFileUploadProgress: (uploadId) => api.get(`/chat/uploads/${uploadId}/progress/`),
+  getFileUploadProgress: (uploadId) => api.get(`/chat/files/upload/${uploadId}/progress/`),
   
   // Send voice note
-  sendVoiceNote: (conversationId, audioBlob, replyTo = null) => {
+  sendVoiceNote: (conversationId, audioBlob, replyTo = null, parentMessageId = null) => {
     const formData = new FormData();
     formData.append('content', 'Voice note');
     formData.append('attachment', audioBlob, 'voice_note.mp3');
     
     if (replyTo) {
       formData.append('reply_to', replyTo);
+    }
+    
+    if (parentMessageId) {
+      formData.append('parent_message', parentMessageId);
     }
     
     return api.post(`/chat/conversations/${conversationId}/messages/create/`, formData, {
@@ -77,7 +119,7 @@ export const chatApi = {
   },
   
   // Get unread messages count
-  getUnreadCount: () => api.get('/chat/messages/unread/'),
+  getUnreadCount: () => api.get('/chat/unread-messages-count/'),
   
   // Get all notifications
   getNotifications: () => api.get('/chat/notifications/'),

@@ -3,7 +3,8 @@ import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { 
   FiDownload, FiCornerUpRight, FiMoreVertical, FiSmile, 
-  FiCheck, FiCheckCircle, FiFile, FiFileText, FiMusic, FiPlay, FiPause 
+  FiCheck, FiCheckCircle, FiFile, FiFileText, FiMusic, FiPlay, FiPause,
+  FiMessageSquare, FiShare, FiCornerDownRight
 } from 'react-icons/fi';
 import PropTypes from 'prop-types';
 import { useAuth } from '../contexts/AuthContext';
@@ -13,10 +14,14 @@ import UserAvatar from './UserAvatar';
 const MessageBubble = ({ 
   message, 
   isOwn, 
-  onReply, 
+  onReply,
+  onThreadReply,
+  onForward,
   onReaction,
   showAvatar = true,
-  isLastInGroup = false
+  isLastInGroup = false,
+  isThreadMessage = false,
+  hasThread = false
 }) => {
   const { user } = useAuth();
   const { darkMode } = useTheme();
@@ -129,6 +134,22 @@ const MessageBubble = ({
       setShowOptions(false);
     }
   };
+
+  // Handle thread reply action
+  const handleThreadReply = () => {
+    if (onThreadReply) {
+      onThreadReply(message);
+      setShowOptions(false);
+    }
+  };
+
+  // Handle forward action
+  const handleForward = () => {
+    if (onForward) {
+      onForward(message);
+      setShowOptions(false);
+    }
+  };
   
   // Handle reaction
   const handleReaction = (emoji) => {
@@ -139,7 +160,15 @@ const MessageBubble = ({
   };
   
   return (
-    <div className={`flex w-full mb-2 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+    <div 
+      id={`message-${message.id}`}
+      className={`flex w-full mb-2 ${isOwn ? 'justify-end' : 'justify-start'} ${isThreadMessage ? 'pl-6' : ''}`}
+    >
+      {/* Thread indicator line */}
+      {isThreadMessage && (
+        <div className="absolute left-0 w-0.5 h-full bg-gray-300 dark:bg-gray-700" style={{ left: '1.5rem' }} />
+      )}
+      
       {!isOwn && showAvatar && (
         <div className="mr-2 flex-shrink-0">
           <UserAvatar 
@@ -165,6 +194,24 @@ const MessageBubble = ({
             <FiCornerUpRight className="mr-1 text-gray-500" />
             <span className="font-medium mr-1">{message.reply_to_message.sender_name}:</span>
             <span className="truncate">{message.reply_to_message.content}</span>
+          </motion.div>
+        )}
+
+        {/* Forwarded message indicator */}
+        {message.is_forwarded && (
+          <motion.div 
+            className={`text-xs mb-1 flex items-center rounded-lg px-3 py-1.5 ${
+              darkMode 
+                ? 'bg-gray-700 text-gray-300' 
+                : 'bg-gray-200 text-gray-600'
+            }`}
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <FiShare className="mr-1 text-gray-500" />
+            <span className="text-gray-500">
+              Forwarded from {message.forwarded_from_info?.name || 'User'}
+            </span>
           </motion.div>
         )}
         
@@ -231,7 +278,13 @@ const MessageBubble = ({
                       <FiDownload size={16} />
                     </a>
                   </div>
-                  <audio ref={audioRef} src={attachmentUrl} onEnded={() => setIsPlaying(false)} className="hidden" />
+                  
+                  <audio 
+                    ref={audioRef}
+                    src={attachmentUrl} 
+                    className="hidden" 
+                    onEnded={() => setIsPlaying(false)}
+                  />
                 </div>
               ) : (
                 <div className={`flex items-center p-2 rounded-lg ${
@@ -285,14 +338,34 @@ const MessageBubble = ({
                 className={`p-2 rounded-full ${
                   darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'
                 }`}
+                title="Reply"
               >
                 <FiCornerUpRight size={16} />
+              </button>
+              <button 
+                onClick={handleThreadReply}
+                className={`p-2 rounded-full ml-1 ${
+                  darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'
+                }`}
+                title="Start thread"
+              >
+                <FiMessageSquare size={16} />
+              </button>
+              <button 
+                onClick={handleForward}
+                className={`p-2 rounded-full ml-1 ${
+                  darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'
+                }`}
+                title="Forward"
+              >
+                <FiShare size={16} />
               </button>
               <button 
                 onClick={() => handleReaction('👍')}
                 className={`p-2 rounded-full ml-1 ${
                   darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'
                 }`}
+                title="React"
               >
                 <FiSmile size={16} />
               </button>
@@ -301,6 +374,7 @@ const MessageBubble = ({
                 className={`p-2 rounded-full ml-1 ${
                   darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'
                 }`}
+                title="More options"
               >
                 <FiMoreVertical size={16} />
               </button>
@@ -324,6 +398,21 @@ const MessageBubble = ({
               </motion.div>
             ))}
           </div>
+        )}
+
+        {/* Thread indicator */}
+        {hasThread && !isThreadMessage && (
+          <motion.button
+            className={`flex items-center mt-1 text-xs px-2 py-1 rounded-lg ${
+              darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
+            }`}
+            onClick={() => onThreadReply(message)}
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <FiCornerDownRight className="mr-1" />
+            <span>{message.thread_count} {message.thread_count === 1 ? 'reply' : 'replies'}</span>
+          </motion.button>
         )}
       </div>
       
@@ -350,6 +439,11 @@ MessageBubble.propTypes = {
     attachment: PropTypes.string,
     attachment_url: PropTypes.string,
     reply_to_message: PropTypes.object,
+    is_forwarded: PropTypes.bool,
+    forwarded_from_info: PropTypes.object,
+    forwarded_by_info: PropTypes.object,
+    thread_count: PropTypes.number,
+    parent_message_info: PropTypes.object,
     reactions: PropTypes.arrayOf(PropTypes.shape({
       emoji: PropTypes.string,
       count: PropTypes.number,
@@ -358,9 +452,13 @@ MessageBubble.propTypes = {
   }).isRequired,
   isOwn: PropTypes.bool,
   onReply: PropTypes.func,
+  onThreadReply: PropTypes.func,
+  onForward: PropTypes.func,
   onReaction: PropTypes.func,
   showAvatar: PropTypes.bool,
-  isLastInGroup: PropTypes.bool
+  isLastInGroup: PropTypes.bool,
+  isThreadMessage: PropTypes.bool,
+  hasThread: PropTypes.bool
 };
 
 export default MessageBubble; 

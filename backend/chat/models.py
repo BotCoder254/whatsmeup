@@ -66,6 +66,10 @@ class Message(models.Model):
     is_read = models.BooleanField(default=False)
     read_by = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='read_messages', blank=True)
     reply_to = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='replies')
+    parent_message = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='thread_replies')
+    forwarded_from = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='forwarded_copies')
+    forwarded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='forwarded_messages')
+    is_forwarded = models.BooleanField(default=False)
     attachment = models.FileField(upload_to=message_attachment_path, null=True, blank=True)
     attachment_type = models.CharField(max_length=20, choices=ATTACHMENT_TYPES, null=True, blank=True)
     attachment_thumbnail = models.ImageField(upload_to='chat_thumbnails/', null=True, blank=True)
@@ -140,6 +144,34 @@ class Message(models.Model):
                 self.is_read = True
                 self.save()
     
+    def forward_to_conversation(self, user, conversation):
+        """Forward this message to another conversation"""
+        forwarded_message = Message.objects.create(
+            conversation=conversation,
+            sender=user,
+            content=self.content,
+            forwarded_from=self,
+            forwarded_by=user,
+            is_forwarded=True,
+            attachment=self.attachment,
+            attachment_type=self.attachment_type
+        )
+        return forwarded_message
+    
+    def get_thread_messages(self):
+        """Get all messages in this thread"""
+        if self.parent_message:
+            # This is a thread reply, return all siblings including parent
+            return Message.objects.filter(
+                Q(id=self.parent_message.id) | 
+                Q(parent_message=self.parent_message)
+            ).order_by('timestamp')
+        else:
+            # This is a parent message, return all replies
+            return Message.objects.filter(
+                parent_message=self
+            ).order_by('timestamp')
+    
     class Meta:
         ordering = ['timestamp']
 
@@ -164,6 +196,8 @@ class Notification(models.Model):
         ('friend_accept', 'Friend Request Accepted'),
         ('mention', 'Mention'),
         ('system', 'System Notification'),
+        ('thread_reply', 'Thread Reply'),
+        ('forwarded_message', 'Forwarded Message'),
     )
     
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='notifications')
